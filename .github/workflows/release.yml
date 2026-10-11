@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: darwin
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -trimpath -ldflags="-s -w -X main.Version=${{ github.ref_name }}" \
+            -o xytherion-${{ matrix.os }}-${{ matrix.arch }} \
+            ./cmd/xytherion
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xytherion-${{ matrix.os }}-${{ matrix.arch }}
+          path: xytherion-${{ matrix.os }}-${{ matrix.arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Compute checksums
+        working-directory: dist
+        run: |
+          sha256sum xytherion-* > checksums.txt
+          cat checksums.txt
+
+      # Agents only install releases whose checksums.txt is signed with the
+      # Xytherion key (see internal/selfupdate/pubkey.go).
+      - name: Sign checksums
+        env:
+          XYTHERION_SIGNING_KEY: ${{ secrets.XYTHERION_SIGNING_KEY }}
+        run: |
+          if [ -z "$XYTHERION_SIGNING_KEY" ]; then
+            echo "::warning::XYTHERION_SIGNING_KEY secret missing — release is unsigned, agents will refuse to auto-update to it."
+            exit 0
+          fi
+          go run ./scripts/signtool sign dist/checksums.txt > dist/checksums.txt.sig
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/xytherion-darwin-arm64
+            dist/xytherion-darwin-amd64
+            dist/xytherion-linux-amd64
+            dist/xytherion-linux-arm64
+            dist/checksums.txt
+            dist/checksums.txt.sig
+          fail_on_unmatched_files: false
+          generate_release_notes: true

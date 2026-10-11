@@ -1,0 +1,15 @@
+# Build output
+/xytherion
+/xytherion-*
+dist/
+bin/
+
+# Go
+*.test
+*.out
+
+# macOS
+.DS_Store
+
+# The embedded dashboard build must be committed (go:embed, no Node at build time).
+!/internal/ui/dist/
