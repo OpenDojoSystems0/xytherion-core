@@ -81,10 +81,11 @@ jobs:
           XYTHERION_SIGNING_KEY: ${{ secrets.XYTHERION_SIGNING_KEY }}
         run: |
           if [ -z "$XYTHERION_SIGNING_KEY" ]; then
-            echo "::warning::XYTHERION_SIGNING_KEY secret missing — release is unsigned, agents will refuse to auto-update to it."
-            exit 0
+            echo "::error::XYTHERION_SIGNING_KEY secret is missing: refusing to publish an unsigned release."
+            exit 1
           fi
           go run ./scripts/signtool sign dist/checksums.txt > dist/checksums.txt.sig
+          go run ./scripts/signtool verify dist/checksums.txt dist/checksums.txt.sig
 
       - name: Create release
         uses: softprops/action-gh-release@v2

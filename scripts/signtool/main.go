@@ -3,6 +3,7 @@
 //	go run ./scripts/signtool keygen -out ~/.config/xytherion-signing/update.key
 //	go run ./scripts/signtool sign checksums.txt > checksums.txt.sig
 //	go run ./scripts/signtool sign-manifest -version v0.3.1 -url https://… -sha <sha256>
+//	go run ./scripts/signtool verify checksums.txt checksums.txt.sig
 //
 // The private key is read from -key FILE or the XYTHERION_SIGNING_KEY
 // environment variable (base64), which is how CI provides it. Never commit it.
@@ -32,13 +33,15 @@ func main() {
 		sign(os.Args[2:])
 	case "sign-manifest":
 		signManifest(os.Args[2:])
+	case "verify":
+		verify(os.Args[2:])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: signtool keygen -out FILE | sign [-key FILE] FILE | sign-manifest [-key FILE] -version V -url U -sha S")
+	fmt.Fprintln(os.Stderr, "usage: signtool keygen -out FILE | sign [-key FILE] FILE | sign-manifest [-key FILE] -version V -url U -sha S | verify FILE SIGFILE")
 	os.Exit(2)
 }
 
@@ -115,4 +118,32 @@ func signManifest(args []string) {
 	}
 	msg := selfupdate.ManifestMessage(*version, *url, *sha)
 	fmt.Println(base64.StdEncoding.EncodeToString(ed25519.Sign(loadKey(*keyFile), msg)))
+}
+
+// verify checks a signature against the public key embedded in the agent, so a
+// release can never ship with a key the agents would reject.
+func verify(args []string) {
+	if len(args) != 2 {
+		fail("verify takes a file and its signature file")
+	}
+	data, err := os.ReadFile(args[0])
+	if err != nil {
+		fail("%v", err)
+	}
+	raw, err := os.ReadFile(args[1])
+	if err != nil {
+		fail("%v", err)
+	}
+	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil {
+		fail("signature is not valid base64")
+	}
+	pub, err := base64.StdEncoding.DecodeString(selfupdate.PublicKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		fail("embedded public key is invalid")
+	}
+	if !ed25519.Verify(ed25519.PublicKey(pub), data, sig) {
+		fail("signature does NOT match the public key embedded in the agent — wrong signing key?")
+	}
+	fmt.Println("signature OK")
 }
