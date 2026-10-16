@@ -1,26 +1,20 @@
 # Xytherion
 
-Agent de monitoring pour serveurs Linux et macOS. Un seul binaire, un dashboard intégré, **aucun compte, aucun cloud, aucune télémétrie** : tout reste sur ta machine.
+Un agent de monitoring pour serveurs Linux et Mac. Un seul binaire, un dashboard intégré, pas de compte, pas de cloud, rien ne sort de ta machine.
 
-Après installation, le dashboard est disponible sur **http://localhost:9001**.
+On l'a écrit parce qu'on en avait marre de monter une stack complète (base de métriques, exporters, alerting, dashboards) juste pour savoir si un serveur va bien. Ici tu lances un programme et tu ouvres http://localhost:9001.
 
-## Ce que l'agent surveille
+Il suit le CPU, la mémoire, les disques, la charge, le réseau et les processus. Il garde l'historique à la minute pendant 7 jours, même après un redémarrage. Il regarde aussi les ports ouverts, le pare-feu (ufw, firewalld, nftables, iptables, pf), les dernières connexions SSH, et il peut surveiller des URL (avec la date d'expiration du certificat), envoyer des alertes sur seuils et appeler des webhooks. Quand un agent disparaît, le dashboard fait la différence entre un arrêt propre et un crash ou une coupure réseau (le Dead Man's Switch). Il sait aussi afficher plusieurs serveurs, deux dans la version gratuite.
 
-- **Système** : CPU, mémoire, disques, charge, réseau, processus.
-- **Historique** : mesures à la seconde pour la dernière heure, puis une moyenne par minute pendant 7 jours (conservée après un redémarrage).
-- **Sécurité** : ports ouverts et exposés, état du pare-feu (ufw, firewalld, nftables, iptables, pf), dernières connexions SSH, empreinte des processus.
-- **Disponibilité** : moniteurs HTTP/HTTPS (avec expiration du certificat SSL), alertes sur seuils, webhooks, Dead Man's Switch.
-- **Flotte** : le dashboard peut afficher plusieurs serveurs (2 dans le plan gratuit).
+## Installer
 
-## Installation
-
-macOS ou Linux (amd64 / arm64) :
+Sur Linux ou macOS (amd64 et arm64) :
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OpenDojoSystems0/xytherion-core/main/install.sh | bash
 ```
 
-Le script vérifie l'empreinte SHA-256 du binaire avant de l'installer, et propose de démarrer l'agent automatiquement au démarrage (systemd sous Linux, launchd sous macOS).
+Le script vérifie l'empreinte SHA-256 du binaire avant de l'installer, puis te demande si l'agent doit démarrer tout seul au boot (systemd sur Linux, launchd sur Mac).
 
 Avec Homebrew :
 
@@ -29,45 +23,47 @@ brew tap OpenDojoSystems0/xytherion
 brew install xytherion
 ```
 
-Depuis les sources (Go, voir `go.mod` pour la version) :
+Ou depuis les sources, avec la version de Go indiquée dans `go.mod` :
 
 ```bash
 git clone https://github.com/OpenDojoSystems0/xytherion-core
 cd xytherion-core
-make build        # produit ./bin/xytherion
+make build
 ./bin/xytherion
 ```
 
-Le dashboard est fourni déjà compilé dans `internal/ui/dist` : aucune dépendance Node.js n'est nécessaire pour compiler l'agent.
+Le dashboard est déjà compilé dans `internal/ui/dist`, donc pas besoin de Node pour compiler l'agent.
 
 ## Utilisation
 
 ```text
 xytherion [--port 9001] [--interval 1s] [--ring 3600] [--cors ORIGINES]
 xytherion --version
-xytherion --update      # installe la dernière version signée
+xytherion --update
 ```
 
-| Variable | Rôle |
+Quelques variables d'environnement :
+
+| Variable | Effet |
 | --- | --- |
-| `XYTHERION_TOKEN` | Jeton d'accès. Sans jeton, l'API n'est joignable que depuis la machine elle-même. |
-| `XYTHERION_ALLOW_REMOTE=1` | Autorise l'accès réseau sans jeton (déconseillé hors réseau de confiance). |
-| `XYTHERION_ALLOWED_HOSTS` | Noms de domaine supplémentaires acceptés (protection anti DNS-rebinding). |
-| `XYTHERION_DATA_FILE` | Fichier des moniteurs et webhooks. |
-| `XYTHERION_AUTO_UPDATE=1` | Installe automatiquement les mises à jour signées. |
-| `XYTHERION_UPDATE_URL` | Manifeste signé auto-hébergé, à la place des releases GitHub (HTTPS obligatoire). |
+| `XYTHERION_TOKEN` | Jeton d'accès. Sans lui, l'API n'est joignable que depuis la machine. |
+| `XYTHERION_ALLOW_REMOTE=1` | Ouvre l'accès réseau sans jeton (à éviter hors réseau de confiance). |
+| `XYTHERION_ALLOWED_HOSTS` | Noms de domaine acceptés en plus, pour passer derrière un domaine. |
+| `XYTHERION_DATA_FILE` | Où stocker les moniteurs et les webhooks. |
+| `XYTHERION_AUTO_UPDATE=1` | Installe les mises à jour signées sans demander. |
+| `XYTHERION_UPDATE_URL` | Manifeste signé auto-hébergé à la place des releases GitHub (HTTPS obligatoire). |
 
-### Accès à distance et jeton
+### Consulter un serveur à distance
 
-Pour consulter un serveur depuis une autre machine, définis un jeton : une chaîne longue et aléatoire.
+Par défaut l'agent n'écoute que sur 127.0.0.1 et ::1. Pour le consulter depuis une autre machine, définis un jeton long et aléatoire :
 
 ```bash
 XYTHERION_TOKEN="$(openssl rand -hex 32)" xytherion
 ```
 
-Ouvre ensuite `http://IP-du-serveur:9001` et colle le jeton dans « Jeton d'accès ». Sans bon jeton, l'API répond 401.
+Ouvre ensuite `http://IP-du-serveur:9001` et colle le jeton dans le champ « Jeton d'accès ». Sans le bon jeton, l'API répond 401.
 
-Sous Linux, l'installeur génère un jeton pour le service, l'affiche une seule fois et le range dans `/etc/xytherion/agent.env` (lisible par root uniquement). Pour le relire ou le remplacer :
+Avec le service Linux installé par le script, un jeton est généré à l'installation, affiché une fois, et rangé dans `/etc/xytherion/agent.env` (lisible par root seulement). Pour le relire ou le changer :
 
 ```bash
 sudo cat /etc/xytherion/agent.env
@@ -76,42 +72,32 @@ sudo chmod 600 /etc/xytherion/agent.env
 sudo systemctl restart xytherion
 ```
 
-Le plus sûr reste de **ne pas exposer le port 9001 sur Internet** : passe par un VPN ou un tunnel SSH, puis ouvre `http://localhost:9001` sur ton ordinateur.
+Le plus propre reste de ne pas exposer le port 9001 sur Internet. Passe par un VPN ou un tunnel SSH, puis ouvre http://localhost:9001 sur ton poste :
 
 ```bash
 ssh -L 9001:127.0.0.1:9001 utilisateur@ton-serveur
 ```
 
-Pour la vue Flotte, utilise le même jeton sur tous tes agents. Derrière un reverse proxy installé sur la même machine, définis toujours un jeton (l'agent voit alors toutes les requêtes comme locales).
+Pour la vue multi-serveurs, utilise le même jeton partout. Et si tu mets l'agent derrière un reverse proxy sur la même machine, mets toujours un jeton : l'agent voit alors toutes les requêtes comme locales.
 
 ## Sécurité
 
-- Sans jeton, l'agent n'écoute que sur `127.0.0.1` et `::1`, et ne s'annonce pas sur le réseau local.
-- Protection contre le DNS-rebinding (liste de noms acceptés) et le CSRF (contrôle de l'origine des requêtes qui modifient des données).
-- Les requêtes sortantes des moniteurs et webhooks refusent les adresses privées, locales et de métadonnées cloud (anti-SSRF).
-- Les commandes système sont lancées depuis des chemins fixes, avec un environnement contrôlé.
-- Les données sont stockées avec des droits restreints (`0600`, dossier `0700`).
-- Le service systemd est durci (système en lecture seule, pas de nouveaux privilèges, appels réseau limités).
+Sans jeton, l'agent n'écoute que sur la machine et ne s'annonce pas sur le réseau. Les noms d'hôte inconnus sont refusés (anti DNS rebinding), les requêtes qui modifient des données doivent venir du bon site (anti CSRF), et les moniteurs et webhooks ne peuvent pas viser des adresses privées ou les métadonnées cloud (anti SSRF). Les commandes système sont lancées depuis des chemins fixes, les fichiers de données sont en 0600, et le service systemd tourne avec un système de fichiers en lecture seule, sans nouveaux privilèges.
 
-### Mises à jour
+Les mises à jour sont signées en ed25519 en plus de leur empreinte SHA-256, et téléchargées en HTTPS uniquement. L'agent refuse tout binaire dont la signature ne correspond pas à la clé publique intégrée au code. Si tu as installé avec Homebrew, mets à jour avec `brew upgrade xytherion`.
 
-Chaque version est **signée (ed25519)** en plus de son empreinte SHA-256 : l'agent refuse tout binaire dont la signature est invalide. Le téléchargement se fait en HTTPS uniquement. Les installations Homebrew sont mises à jour avec `brew upgrade xytherion`.
+Si tu trouves une faille, ouvre un signalement privé depuis l'onglet Security du dépôt plutôt qu'une issue publique.
 
-Un problème de sécurité ? Ouvre une *security advisory* privée sur GitHub plutôt qu'une issue publique.
-
-## Désinstallation
+## Désinstaller
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OpenDojoSystems0/xytherion-core/main/uninstall.sh | bash
 ```
 
-## Développement
+## Développer
 
-```bash
-make test         # go vet + go test
-make dev          # lance l'agent depuis les sources
-```
+`make dev` lance l'agent depuis les sources, `make test` fait un `go vet` puis les tests.
 
 ## Licence
 
-[MIT](LICENSE). Une offre Pro est prévue à part, avec sa propre licence ; elle ne fait pas partie de ce dépôt.
+MIT, voir [LICENSE](LICENSE). Une offre Pro est prévue à part, sous sa propre licence, et ne fait pas partie de ce dépôt.
